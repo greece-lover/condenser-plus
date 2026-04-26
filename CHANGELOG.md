@@ -13,3 +13,4 @@ All notable changes to condenser-plus.
 - Steemit-Images proxy: some images don't load (planned: replace proxy with direct CDN)
 - Top navigation menu: needs visual polish (planned: enhanced menu)
 
+
