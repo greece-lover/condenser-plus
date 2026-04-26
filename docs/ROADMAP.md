@@ -11,6 +11,7 @@
 - Custom footer with attribution to steem-node-rotator
 - Server indicator in header (small badge showing which API node is currently active)
 - Server-side rotator integration (Condenser SSR calls currently bypass the rotator)
+- Stack-Modernisierung (Node 12 → Node 18+) — Voraussetzung für Codespaces-Support und langfristige Wartbarkeit
 - Public deployment (subdomain TBD)
 
 ## Long term (next months)

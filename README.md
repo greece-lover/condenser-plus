@@ -2,12 +2,6 @@
 
 A fork of [steemit/condenser](https://github.com/steemit/condenser) with enhancements.
 
-## Try it in your browser
-
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/greece-lover/condenser-plus)
-
-Click the button above to launch a fully configured development environment in your browser. No local installation needed. (Requires GitHub account; free 60 hours/month included on personal accounts.)
-
 ## What's different
 
 This fork integrates [steem-node-rotator](https://github.com/greece-lover/steem-node-rotator) — a multi-server rotation library that automatically picks the fastest available Steem API node from the user's location. Instead of being tied to a single API endpoint, this Condenser stays responsive even if individual servers go down or slow down.
