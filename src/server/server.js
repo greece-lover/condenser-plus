@@ -35,6 +35,42 @@ if (cluster.isMaster) console.log('application server starting, please wait.');
 
 // import uploadImage from 'server/upload-image' //medium-editor
 
+// Steem RPC hosts that the rotator (src/app/utils/RotatorBootstrap.js) may
+// switch the @steemit/steem-js api to. These must be on the CSP connect-src
+// allowlist or the browser will silently block the request and the rotator
+// will fall back to api.steemit.com — making multi-server rotation purely
+// cosmetic. Discovered after witness moecki demonstrated the fallback
+// behaviour on production steemit.com. Keep this in sync with both
+// RotatorBootstrap.DEFAULT_NODES (10 nodes) and config.rpc_list.
+const STEEM_RPC_HOSTS = [
+    'https://api.steemit.com',
+    'https://api.steemitdev.com',
+    'https://api.steemyy.com',
+    'https://api2.steemyy.com',
+    'https://api.justyy.com',
+    'https://api2.justyy.com',
+    'https://steem.justyy.com',
+    'https://api.moecki.online',
+    'https://api.dlike.io',
+    'https://steem.61bts.com',
+    'https://steem.nirmaha.com',
+    'https://steemenginerpc.com',
+    'https://steem.ecosynthesizer.com',
+    'https://api.upvu.org',
+    'https://api.steem.fans',
+    'https://api.campingclub.me',
+    'https://cn.steems.top',
+    'https://api.steems.top',
+    'https://rpc.amarbangla.net',
+    'https://api.wherein.io',
+    'https://api.botsteem.com',
+    'https://api.pennsif.net',
+    'https://steemapi.boylikegirl.club',
+    'https://api.steemzzang.com',
+    'https://api.steememory.com',
+    'https://api.futureshock.world',
+];
+
 const app = new Koa();
 app.name = 'Steemit app';
 const env = process.env.NODE_ENV || 'development';
@@ -365,6 +401,14 @@ if (env === 'production') {
         reportOnly: config.get('helmet.reportOnly'),
         setAllHeaders: config.get('helmet.setAllHeaders'),
     };
+    // Allow all known Steem RPC hosts so the rotator can actually switch
+    // nodes in production. Without this the upstream connect-src directive
+    // (api.steemit.com + api.steemitdev.com only) silently blocks every
+    // other node and the rotator becomes purely cosmetic.
+    helmetConfig.directives.connectSrc = [
+        ...(helmetConfig.directives.connectSrc || []),
+        ...STEEM_RPC_HOSTS,
+    ];
     helmetConfig.directives.reportUri = helmetConfig.directives.reportUri[0];
     if (helmetConfig.directives.reportUri === '-') {
         delete helmetConfig.directives.reportUri;
