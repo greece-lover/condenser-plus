@@ -55,6 +55,13 @@ function getAccountFromParams(params) {
 }
 
 
+// Bridge methods that some (community) Steem nodes don't implement.
+// For these, the caller has its own non-fatal fallback (e.g. notification
+// counter → 0). Logging the error loudly on every page load just clutters
+// the F12 console, so we route those to console.debug instead. Real bridge
+// failures (anything not in this set) keep their loud console.error.
+const TOLERABLE_BRIDGE_METHODS = new Set(['get_notices']);
+
 export async function callBridge(method, params, pre = 'bridge.') {
     // Pre-validate account parameter
     if (shouldValidateAccount(method, params)) {
@@ -82,7 +89,18 @@ export async function callBridge(method, params, pre = 'bridge.') {
                     params: params,
                     err: err,
                 };
-                console.error(JSON.stringify(output_err));
+                if (TOLERABLE_BRIDGE_METHODS.has(method)) {
+                    // Quiet fallback — caller handles it with a default
+                    // (notification counter → 0 etc.). Visible in DevTools
+                    // only when the verbose level is enabled.
+                    console.debug(
+                        '[callBridge] tolerated:',
+                        method,
+                        err && err.message
+                    );
+                } else {
+                    console.error(JSON.stringify(output_err));
+                }
 
                 if (err.message === 'Network request failed') {
                     changeRPCNodeToDefault();

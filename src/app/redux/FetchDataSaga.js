@@ -296,7 +296,14 @@ export function* getNotices(action) {
         );
         yield put(globalActions.receiveNotices(notices));
     } catch (error) {
-        console.log('Error Fetching get_notices: ', error);
+        // get_notices is not implemented on every Steem node (notably
+        // some community nodes). The notification counter just stays at
+        // its default — that's an acceptable fallback. We log at debug
+        // level so the default DevTools console stays clean.
+        console.debug(
+            '[notices] get_notices unavailable on current node:',
+            error && error.message
+        );
     }
 }
 

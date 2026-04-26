@@ -127,8 +127,11 @@ export function recordRouteTag(trackingId, tag, params, isLogin = false) {
             },
         ],
         error => {
+            // Telemetry call. Failures are non-UX-critical; some nodes
+            // simply don't support overseer.collect. Keep the console
+            // clean at default verbosity — visible only at verbose level.
             if (error)
-                console.warn('record route tag error', error, error.data);
+                console.debug('record route tag error', error, error && error.data);
         }
     );
 }
@@ -201,15 +204,17 @@ export function userActionRecord(action, params) {
             },
         ],
         error => {
+            // Telemetry call — non-fatal. See note on recordRouteTag.
             if (error)
-                console.warn('user action record error', error, error.data);
+                console.debug('user action record error', error, error && error.data);
         }
     );
 }
 
 export function recordAdsView({ trackingId, adTag }) {
     api.call('overseer.collect', ['ad', { trackingId, adTag }], error => {
-        if (error) console.warn('overseer error', error);
+        // Telemetry — non-fatal.
+        if (error) console.debug('overseer error', error);
     });
 }
 
@@ -234,7 +239,8 @@ export function recordActivityTracker({
         },
     };
     api.call('overseer.collect', ['custom', data], error => {
-        if (error) console.warn('overseer error:', data, error);
+        // Telemetry — non-fatal.
+        if (error) console.debug('overseer error:', data, error);
     });
 }
 
