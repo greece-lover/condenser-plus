@@ -9,7 +9,7 @@
 //
 import { SteemRotator, HealthCheckLoop } from 'steem-node-rotator';
 import { api } from '@steemit/steem-js';
-import { changeRPCNodeToDefault } from 'app/utils/RPCNode';
+import { changeRPCNodeToDefault, getUserPreferredRpc } from 'app/utils/RPCNode';
 
 const DEFAULT_NODES = [
     'https://api.steemit.com',
@@ -52,6 +52,13 @@ function applyNode(url) {
 
 function pickAndApplyFastest() {
     if (!_rotator) return;
+    // User-pin overrides auto-pick. The pinned node is what the user chose
+    // in Settings; we never override it from the rotator.
+    const pinned = getUserPreferredRpc();
+    if (pinned) {
+        applyNode(pinned);
+        return;
+    }
     const nodes = _rotator.nodes();
     const healthy = nodes
         .filter(n => n.isHealthy && n.latencyMs !== null)
@@ -72,7 +79,11 @@ export function initRotator(opts = {}) {
         onNodeFailure: (info) => {
             console.warn('[steem-rotator] node failed:', info.url, info.reason);
             notify('node-failure', info);
-            if (_activeNode === info.url) {
+            // If a user has pinned a node, don't silently switch away — the
+            // user wanted this specific node. If the pin happens to be the
+            // failing node, the indicator's red status communicates the
+            // problem; the user can pick another or switch back to auto.
+            if (_activeNode === info.url && !getUserPreferredRpc()) {
                 pickAndApplyFastest();
             }
         },
@@ -89,11 +100,18 @@ export function initRotator(opts = {}) {
     });
 
     // Apply the first eligible node immediately so the very first call
-    // already goes to a known node (default order = config order; once
-    // the immediate health probe completes, fastest is chosen).
-    applyNode(_rotator.nodes()[0].url);
+    // already goes to a known node. If the user pinned one, that takes
+    // precedence over the bootstrap-default order.
+    const pinnedAtBoot = getUserPreferredRpc();
+    if (pinnedAtBoot) {
+        applyNode(pinnedAtBoot);
+    } else {
+        applyNode(_rotator.nodes()[0].url);
+    }
 
-    // After the first probe finishes, pick the fastest healthy one.
+    // After the first probe finishes, pick the fastest healthy one — but
+    // pickAndApplyFastest also respects the user pin, so this is a no-op
+    // when the user has chosen a specific server.
     setTimeout(pickAndApplyFastest, 8000);
 
     _loop.start();
@@ -112,4 +130,17 @@ export function getActiveNode() { return _activeNode; }
 export function onRotatorEvent(fn) { _listeners.add(fn); return () => _listeners.delete(fn); }
 export function getNodeHealth() {
     return _rotator ? _rotator.nodes() : [];
+}
+
+// Called by Settings when the user changes the pin. Forces an immediate
+// apply so the next RPC call goes to the right node without waiting for
+// the next probe tick.
+export function applyUserPreferenceNow() {
+    const pinned = getUserPreferredRpc();
+    if (pinned) {
+        applyNode(pinned);
+    } else {
+        // Pin was just cleared — go back to auto-mode by re-picking.
+        pickAndApplyFastest();
+    }
 }

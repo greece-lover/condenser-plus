@@ -83,4 +83,90 @@
             color: #333;
         }
 	}
+
+    // === RPC node selection block ===
+    &__rpcIntro {
+        margin: 0 0 12px 0;
+        color: #555;
+        font-size: 0.9rem;
+    }
+    &__rpc {
+        max-width: 560px;
+    }
+    &__rpcRadio {
+        display: block;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.15s;
+        &:hover { background: rgba(0, 0, 0, 0.02); }
+        input[type="radio"] {
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        strong {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+    }
+    &__rpcHint {
+        margin: 4px 0 0 24px;
+        color: #666;
+        font-size: 0.85rem;
+        line-height: 1.4;
+    }
+    &__rpcCurrent {
+        margin: 8px 0 0 24px;
+        padding: 6px 10px;
+        background: rgba(42, 157, 143, 0.08);
+        border-radius: 4px;
+        font-size: 0.85rem;
+        color: #1d6e62;
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+    }
+    &__rpcManualBody {
+        margin: 12px 0 0 24px;
+    }
+    &__rpcSelect {
+        display: block;
+        width: 100%;
+        max-width: 480px;
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+        font-size: 0.85rem;
+        padding: 6px 8px;
+        margin-bottom: 8px;
+    }
+    &__rpcCustom {
+        margin-top: 8px;
+    }
+    &__rpcCustomInput {
+        display: block;
+        width: 100%;
+        max-width: 480px;
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+        font-size: 0.85rem;
+        padding: 6px 8px;
+    }
+    &__rpcActions {
+        margin-top: 10px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    &__rpcSavedFlash {
+        color: #2A9D8F;
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+    &__rpcSummary {
+        margin-top: 16px;
+        padding: 8px 12px;
+        background: #f5f5f5;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        color: #444;
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+    }
 }

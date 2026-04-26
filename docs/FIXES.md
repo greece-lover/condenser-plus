@@ -125,6 +125,65 @@ Discovered after community feedback (witness moecki demonstrated the silent fall
 
 ---
 
+## 3. RPC node user selection in Settings (and the rotator actually respects it)
+
+**Date:** 2026-04-26
+**Files patched:**
+- `src/app/utils/RPCNode.js` — added `getUserPreferredRpc` / `setUserPreferredRpc` / `clearUserPreferredRpc` and a new localStorage key `userPreferredRpc`
+- `src/app/utils/RotatorBootstrap.js` — `pickAndApplyFastest` and `onNodeFailure` now respect a user pin; new `applyUserPreferenceNow()` export for the Settings UI to call after a save
+- `src/app/components/modules/Settings.jsx` — replaced the old `<input list="...">` block with an Auto/Manual radio toggle, a real `<select>` showing live latencies, custom-URL input with `https://` validation, and a Save button with a "✓ Saved" flash
+- `src/app/components/modules/Settings.scss` — small block of layout for the new RPC section
+- `src/app/locales/en.json` — new i18n keys under `settings_jsx`
+
+### Problem
+
+Two problems, one symptom.
+
+**Problem A — silent overwrite.** Upstream Settings let the user pick an RPC node, but stored it in the same localStorage key (`steemSelectedRpc`) the rotator writes on every auto-switch. So the moment the rotator switched, the user's choice was wiped. The user-pick was effectively cosmetic — the rotator immediately overrode it with whatever it considered fastest.
+
+**Problem B — opaque UI.** The picker was a single `<input list="rpcNodes">` with an HTML5 `<datalist>`. Browsers render this as a plain text field; the dropdown only appears once you click and start typing. Visually it looks like a single input, not a list of servers. No latencies, no auto-vs-manual distinction, no "what is currently active" feedback.
+
+### Fix
+
+**Two-key model.** Introduce a separate localStorage key `userPreferredRpc`:
+- empty / `null` → auto-mode, the rotator does its job as before
+- non-empty URL → user pin, the rotator applies that URL and stops auto-switching
+
+`steemSelectedRpc` keeps its meaning ("what is `steem.api.url` pointing at right now") and is now just a cache the rotator and the manual-set both write to. The user pin is the source of truth for "the user wants this server"; the rotator reads `getUserPreferredRpc()` before every pick decision.
+
+**New UI.** The Settings RPC section is now a clear radio toggle:
+
+- **Choose automatically (recommended)** — current behaviour. Shows the active node and its measured latency live (via `RotatorBootstrap.onRotatorEvent` plus a 5 s polling fallback).
+- **Use a specific server** (with hover tooltip explaining when you'd use it — "support a particular witness, or trust one server more than the others") — opens a real `<select>` of all `$STM_Config.steemd_rpc_list` entries, each formatted as `hostname — latency ms` with a `✓` next to the active one and `(down)` next to known-failing ones. Bottom option is "Enter a custom URL…" which reveals an HTTPS-validated text field. A `Save` button commits the pin and shows `✓ Saved` for 2.5 s.
+
+Below the radios, a single-line summary: `Currently using: <host> (chosen automatically)` or `Currently using: <host> (your choice)` depending on mode.
+
+### Verification (in dev mode, browser plugin)
+
+| Step | Expectation | Result |
+|---|---|---|
+| Open `/@steemitblog/settings` fresh | Auto-radio preselected, summary shows `chosen automatically`, indicator shows the active node | ✅ |
+| Switch to Manual, dropdown opens | 23 options (placeholder + 21 bootstrap + custom), `api.steemit.com — 520 ms ✓` for active | ✅ |
+| Pick `api.moecki.online`, click Save | `✓ Saved` flash, `userPreferredRpc=https://api.moecki.online` in localStorage, indicator host updates | ✅ |
+| Navigate to `/trending` | Network tab: **POST `https://api.moecki.online/` 200** (no calls to api.steemit.com) | ✅ |
+| Hard-reload | Pin survives, indicator still shows api.moecki.online, settings page rehydrates with Manual preselected | ✅ |
+| Custom URL: enter `http://insecure.example`, Save | "URL must start with https://…" inline error, pin unchanged | ✅ |
+| Switch back to Auto | Pin cleared (`null`), summary `chosen automatically`, rotator resumes auto-mode | ✅ |
+
+→ Manual selection actually drives the network. Not cosmetic.
+
+### Sibling matches that should NOT be removed
+
+- `LOCALSTORAGE_RPC_NODE_KEY` (`steemSelectedRpc`) is still written by both the rotator and the manual save, on purpose — it caches "current api.url" so the very first request after a page load doesn't have to wait for the rotator to pick. Removing it would break `Main.js`'s bootstrap-time `localStorage.getItem('steemSelectedRpc')` initial-URL read.
+- `changeRPCNodeToDefault` and `getCurrentRPCNode` in `RPCNode.js` keep their existing behaviour — they're the cache layer above. The new `getUserPreferredRpc` / `setUserPreferredRpc` are additive.
+- The old `<datalist>` block in Settings.jsx is gone (replaced wholesale), but the old `handleSelectRPCNode` plus the `rpcNode`/`rpcError` state stay because they may be referenced elsewhere down the file.
+
+### Origin
+
+Direct response to witness moecki's Discord feedback that node-switching on steemit.com just cosmetically updates the UI while requests silently fall back to api.steemit.com. condenser-plus now lets the user actually pin a node — and the rotator stays out of the way.
+
+---
+
 ## Format for future entries
 
 Every fix entry should answer: what was the bug, where was it (one or more files), what was the fix (in plain words plus diff stats), what's the tradeoff, and how does someone verify it works. Include any sibling matches that look related but should be left alone.

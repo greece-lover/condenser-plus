@@ -12,11 +12,42 @@ import MuteList from 'app/components/elements/MuteList';
 import { isLoggedIn } from 'app/utils/UserUtil';
 import { userActionRecord } from 'app/utils/ServerApiClient';
 import * as steem from '@steemit/steem-js';
-import { getCurrentRPCNode, changeRPCNodeToDefault } from 'app/utils/RPCNode';
+import {
+    getCurrentRPCNode,
+    changeRPCNodeToDefault,
+    getUserPreferredRpc,
+    setUserPreferredRpc,
+    clearUserPreferredRpc,
+} from 'app/utils/RPCNode';
+import {
+    getActiveNode,
+    getNodeHealth,
+    onRotatorEvent,
+    applyUserPreferenceNow,
+} from 'app/utils/RotatorBootstrap';
+
+const SENTINEL_CUSTOM = '__custom__';
+
+function isValidHttpsUrl(s) {
+    if (typeof s !== 'string' || s.length < 9) return false;
+    if (!/^https:\/\//.test(s)) return false;
+    try {
+        const u = new URL(s);
+        return u.protocol === 'https:' && !!u.hostname;
+    } catch (e) {
+        return false;
+    }
+}
 
 class Settings extends React.Component {
     constructor(props) {
         super(props);
+
+        const pinned = getUserPreferredRpc();
+        const list = ($STM_Config && $STM_Config.steemd_rpc_list) || [];
+        // If the pinned URL isn't in the bootstrap list, treat the manual
+        // selection as a custom URL.
+        const pinnedInList = pinned && list.indexOf(pinned) >= 0;
 
         this.state = {
             errorMessage: '',
@@ -25,9 +56,115 @@ class Settings extends React.Component {
             rpcNode:
                 getCurrentRPCNode() || $STM_Config.steemd_connection_client,
             rpcError: '',
+            // === RPC mode state ===
+            rpcMode: pinned ? 'manual' : 'auto', // 'auto' | 'manual'
+            rpcManualSelection: pinned
+                ? (pinnedInList ? pinned : SENTINEL_CUSTOM)
+                : '',
+            rpcCustomUrl: pinned && !pinnedInList ? pinned : '',
+            rpcCustomUrlError: '',
+            rpcSavedFlash: false,
+            rpcLiveActiveNode: getActiveNode(),
+            rpcLiveNodes: getNodeHealth(),
         };
         this.initForm(props);
         this.onNsfwPrefChange = this.onNsfwPrefChange.bind(this);
+        this.handleRpcModeChange = this.handleRpcModeChange.bind(this);
+        this.handleRpcDropdownChange = this.handleRpcDropdownChange.bind(this);
+        this.handleRpcCustomUrlChange = this.handleRpcCustomUrlChange.bind(this);
+        this.handleRpcSave = this.handleRpcSave.bind(this);
+        this.refreshRpcLive = this.refreshRpcLive.bind(this);
+    }
+
+    componentDidMount() {
+        this._rpcUnsub = onRotatorEvent(this.refreshRpcLive);
+        this._rpcInterval = setInterval(this.refreshRpcLive, 5000);
+        this.refreshRpcLive();
+    }
+
+    componentWillUnmount() {
+        if (this._rpcUnsub) this._rpcUnsub();
+        if (this._rpcInterval) clearInterval(this._rpcInterval);
+    }
+
+    refreshRpcLive() {
+        this.setState({
+            rpcLiveActiveNode: getActiveNode(),
+            rpcLiveNodes: getNodeHealth(),
+        });
+    }
+
+    handleRpcModeChange(event) {
+        const mode = event.target.value;
+        if (mode === 'auto') {
+            // Clear pin → rotator goes back to auto-mode
+            clearUserPreferredRpc();
+            applyUserPreferenceNow();
+            this.setState({
+                rpcMode: 'auto',
+                rpcManualSelection: '',
+                rpcCustomUrl: '',
+                rpcCustomUrlError: '',
+                rpcSavedFlash: true,
+            });
+            this.flashRpcSaved();
+        } else {
+            // Switch to manual but don't apply yet — user must pick + save
+            this.setState({
+                rpcMode: 'manual',
+                rpcSavedFlash: false,
+            });
+        }
+    }
+
+    handleRpcDropdownChange(event) {
+        const v = event.target.value;
+        this.setState({
+            rpcManualSelection: v,
+            rpcCustomUrlError: '',
+            rpcSavedFlash: false,
+        });
+    }
+
+    handleRpcCustomUrlChange(event) {
+        const v = event.target.value;
+        this.setState({
+            rpcCustomUrl: v,
+            rpcCustomUrlError: '',
+            rpcSavedFlash: false,
+        });
+    }
+
+    handleRpcSave() {
+        const { rpcManualSelection, rpcCustomUrl } = this.state;
+        let urlToPin = rpcManualSelection;
+        if (rpcManualSelection === SENTINEL_CUSTOM) {
+            if (!isValidHttpsUrl(rpcCustomUrl)) {
+                this.setState({
+                    rpcCustomUrlError: tt('settings_jsx.rpc_custom_url_invalid'),
+                });
+                return;
+            }
+            urlToPin = rpcCustomUrl.trim();
+        }
+        if (!urlToPin) return;
+
+        setUserPreferredRpc(urlToPin);
+        applyUserPreferenceNow();
+        changeRPCNodeToDefault(urlToPin);
+        this.setState({
+            rpcNode: urlToPin,
+            rpcCustomUrlError: '',
+        });
+        this.flashRpcSaved();
+    }
+
+    flashRpcSaved() {
+        this.setState({ rpcSavedFlash: true });
+        if (this._rpcSavedTimer) clearTimeout(this._rpcSavedTimer);
+        this._rpcSavedTimer = setTimeout(() => {
+            this.setState({ rpcSavedFlash: false });
+        }, 2500);
     }
 
     componentWillMount() {
@@ -306,33 +443,239 @@ class Settings extends React.Component {
         return (
             <div className="Settings">
                 <div className="row">
-                    <div className="small-12 medium-4 large-4 columns">
+                    <div className="small-12 medium-8 large-6 columns">
                         <br />
                         <br />
                         <h4>{tt('settings_jsx.rpc_title')}</h4>
+                        <p className="Settings__rpcIntro">
+                            {tt('settings_jsx.rpc_intro')}
+                        </p>
 
-                        <label>{tt('settings_jsx.rpc_select')}</label>
+                        {(() => {
+                            const {
+                                rpcMode,
+                                rpcManualSelection,
+                                rpcCustomUrl,
+                                rpcCustomUrlError,
+                                rpcSavedFlash,
+                                rpcLiveActiveNode,
+                                rpcLiveNodes,
+                            } = this.state;
+                            const list =
+                                ($STM_Config &&
+                                    $STM_Config.steemd_rpc_list) ||
+                                [];
+                            const latencyByUrl = {};
+                            const healthyByUrl = {};
+                            (rpcLiveNodes || []).forEach(n => {
+                                latencyByUrl[n.url] = n.latencyMs;
+                                healthyByUrl[n.url] = n.isHealthy;
+                            });
+                            const hostOnly = url =>
+                                String(url || '')
+                                    .replace(/^https?:\/\//, '')
+                                    .replace(/\/$/, '');
+                            const liveLatency =
+                                rpcLiveActiveNode &&
+                                latencyByUrl[rpcLiveActiveNode] != null
+                                    ? `${latencyByUrl[rpcLiveActiveNode]} ms`
+                                    : tt('settings_jsx.rpc_no_probe_yet');
+                            const formatOption = url => {
+                                const h = hostOnly(url);
+                                const lat = latencyByUrl[url];
+                                if (lat == null) return `${h}  —  …`;
+                                return `${h}  —  ${lat} ms`;
+                            };
+                            return (
+                                <div className="Settings__rpc">
+                                    <label className="Settings__rpcRadio">
+                                        <input
+                                            type="radio"
+                                            name="rpc-mode"
+                                            value="auto"
+                                            checked={rpcMode === 'auto'}
+                                            onChange={
+                                                this.handleRpcModeChange
+                                            }
+                                        />
+                                        <strong>
+                                            {tt(
+                                                'settings_jsx.rpc_auto_label'
+                                            )}
+                                        </strong>
+                                        <div className="Settings__rpcHint">
+                                            {tt(
+                                                'settings_jsx.rpc_auto_hint'
+                                            )}
+                                        </div>
+                                        {rpcMode === 'auto' && (
+                                            <div className="Settings__rpcCurrent">
+                                                {tt(
+                                                    'settings_jsx.rpc_currently_active',
+                                                    {
+                                                        rpc: hostOnly(
+                                                            rpcLiveActiveNode
+                                                        ),
+                                                        ms: liveLatency,
+                                                    }
+                                                )}
+                                            </div>
+                                        )}
+                                    </label>
 
-                        <input
-                            list="rpcNodes"
-                            defaultValue={rpcNode}
-                            onChange={this.handleSelectRPCNode}
-                            className="rpc-input"
-                        />
-                        <datalist id="rpcNodes">
-                            {$STM_Config.steemd_rpc_list.map((rpc, idx) => (
-                                <option key={idx} value={rpc} />
-                            ))}
-                        </datalist>
+                                    <label
+                                        className="Settings__rpcRadio"
+                                        title={tt(
+                                            'settings_jsx.rpc_manual_tooltip'
+                                        )}
+                                    >
+                                        <input
+                                            type="radio"
+                                            name="rpc-mode"
+                                            value="manual"
+                                            checked={rpcMode === 'manual'}
+                                            onChange={
+                                                this.handleRpcModeChange
+                                            }
+                                        />
+                                        <strong>
+                                            {tt(
+                                                'settings_jsx.rpc_manual_label'
+                                            )}
+                                        </strong>
+                                        <div className="Settings__rpcHint">
+                                            {tt(
+                                                'settings_jsx.rpc_manual_hint'
+                                            )}
+                                        </div>
+                                        {rpcMode === 'manual' && (
+                                            <div className="Settings__rpcManualBody">
+                                                <select
+                                                    value={
+                                                        rpcManualSelection
+                                                    }
+                                                    onChange={
+                                                        this
+                                                            .handleRpcDropdownChange
+                                                    }
+                                                    className="Settings__rpcSelect"
+                                                >
+                                                    <option value="">
+                                                        {tt(
+                                                            'settings_jsx.rpc_select_placeholder'
+                                                        )}
+                                                    </option>
+                                                    {list.map(url => (
+                                                        <option
+                                                            key={url}
+                                                            value={url}
+                                                        >
+                                                            {formatOption(
+                                                                url
+                                                            )}
+                                                            {healthyByUrl[
+                                                                url
+                                                            ] === false
+                                                                ? ' (down)'
+                                                                : ''}
+                                                            {url ===
+                                                            rpcLiveActiveNode
+                                                                ? ' ✓'
+                                                                : ''}
+                                                        </option>
+                                                    ))}
+                                                    <option
+                                                        value={
+                                                            SENTINEL_CUSTOM
+                                                        }
+                                                    >
+                                                        {tt(
+                                                            'settings_jsx.rpc_custom_url_option'
+                                                        )}
+                                                    </option>
+                                                </select>
+                                                {rpcManualSelection ===
+                                                    SENTINEL_CUSTOM && (
+                                                    <div className="Settings__rpcCustom">
+                                                        <input
+                                                            type="url"
+                                                            placeholder={tt(
+                                                                'settings_jsx.rpc_custom_url_placeholder'
+                                                            )}
+                                                            value={
+                                                                rpcCustomUrl
+                                                            }
+                                                            onChange={
+                                                                this
+                                                                    .handleRpcCustomUrlChange
+                                                            }
+                                                            className="Settings__rpcCustomInput"
+                                                        />
+                                                        {rpcCustomUrlError && (
+                                                            <div className="error">
+                                                                {
+                                                                    rpcCustomUrlError
+                                                                }
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                <div className="Settings__rpcActions">
+                                                    <button
+                                                        type="button"
+                                                        className="button"
+                                                        onClick={
+                                                            this
+                                                                .handleRpcSave
+                                                        }
+                                                        disabled={
+                                                            !rpcManualSelection ||
+                                                            (rpcManualSelection ===
+                                                                SENTINEL_CUSTOM &&
+                                                                !rpcCustomUrl)
+                                                        }
+                                                    >
+                                                        {tt(
+                                                            'settings_jsx.rpc_save'
+                                                        )}
+                                                    </button>
+                                                    {rpcSavedFlash && (
+                                                        <span className="Settings__rpcSavedFlash">
+                                                            ✓{' '}
+                                                            {tt(
+                                                                'settings_jsx.rpc_saved'
+                                                            )}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </label>
 
-                        <label>
-                            {rpcError ||
-                                tt('settings_jsx.selected_rpc', {
-                                    rpc: rpcNode,
-                                })}
-                        </label>
+                                    <div className="Settings__rpcSummary">
+                                        {rpcMode === 'auto'
+                                            ? tt(
+                                                  'settings_jsx.rpc_summary_auto',
+                                                  {
+                                                      rpc: hostOnly(
+                                                          rpcLiveActiveNode
+                                                      ),
+                                                  }
+                                              )
+                                            : tt(
+                                                  'settings_jsx.rpc_summary_manual',
+                                                  {
+                                                      rpc: hostOnly(
+                                                          getUserPreferredRpc() ||
+                                                              rpcLiveActiveNode
+                                                      ),
+                                                  }
+                                              )}
+                                    </div>
+                                </div>
+                            );
+                        })()}
 
-                        <br />
                         <br />
                     </div>
                 </div>
