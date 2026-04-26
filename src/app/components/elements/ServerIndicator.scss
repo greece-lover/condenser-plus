@@ -1,0 +1,130 @@
+.ServerIndicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+    color: #555;
+    position: relative;
+    line-height: 1;
+    margin-right: 12px;
+    vertical-align: middle;
+
+    &__dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #999;
+        flex-shrink: 0;
+    }
+
+    &--fast &__dot { background: #2A9D8F; }
+    &--slow &__dot { background: #F4A261; }
+    &--down &__dot {
+        background: #E76F51;
+        animation: server-indicator-pulse 1.5s infinite;
+    }
+    &--unknown &__dot { background: #999; }
+
+    &__host {
+        max-width: 160px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    &__latency {
+        opacity: 0.7;
+        font-variant-numeric: tabular-nums;
+    }
+
+    &:hover {
+        background: rgba(0, 0, 0, 0.04);
+    }
+
+    &--open {
+        background: rgba(0, 0, 0, 0.04);
+    }
+
+    &__panel {
+        position: absolute;
+        top: calc(100% + 4px);
+        right: 0;
+        z-index: 10000;
+        background: #fff;
+        border: 1px solid #ddd;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        border-radius: 4px;
+        min-width: 280px;
+        font-size: 12px;
+        cursor: default;
+        color: #333;
+    }
+
+    &__panelHeader {
+        padding: 8px 12px;
+        border-bottom: 1px solid #eee;
+        font-weight: 600;
+    }
+
+    &__table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 0;
+
+        td {
+            padding: 5px 10px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        tr:last-child td { border-bottom: none; }
+        tr.is-active {
+            background: rgba(42, 157, 143, 0.08);
+            font-weight: 600;
+        }
+    }
+
+    &__nodedot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        &.is-healthy { background: #2A9D8F; }
+        &.is-down { background: #E76F51; }
+    }
+
+    &__nodehost {
+        max-width: 220px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+    }
+
+    &__nodelatency {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        color: #666;
+        white-space: nowrap;
+    }
+}
+
+@media (max-width: 600px) {
+    .ServerIndicator__host {
+        display: none;
+    }
+
+    .ServerIndicator__panel {
+        right: -8px;
+        min-width: 240px;
+    }
+}
+
+@keyframes server-indicator-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}

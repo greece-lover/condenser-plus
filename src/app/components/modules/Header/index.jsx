@@ -26,6 +26,7 @@ import Userpic from 'app/components/elements/Userpic';
 import { SIGNUP_URL } from 'shared/constants';
 import SteemLogo from 'app/components/elements/SteemLogo';
 import Announcement from 'app/components/elements/Announcement';
+import ServerIndicator from 'app/components/elements/ServerIndicator';
 import { Map } from 'immutable';
 import ReactMutationObserver from '../../utils/ReactMutationObserver';
 import LoadingIndicator from 'app/components/elements/LoadingIndicator';
@@ -384,6 +385,8 @@ class Header extends React.Component {
                             </div>
 
                             <div className="small-6 medium-8 large-7 columns Header__buttons">
+                                {/* steem-node-rotator status — shows currently active API node */}
+                                <ServerIndicator />
                                 {/*CUSTOM SEARCH*/}
                                 <span
                                     className="Header__search--desktop--new"
