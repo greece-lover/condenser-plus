@@ -23,6 +23,7 @@ All notable changes to condenser-plus.
 
 ### Known Issues
 - Top navigation menu: needs visual polish (planned: enhanced menu)
+- **CSP not relaxed for multi-server rotation.** Currently no impact: dev mode does not register the `helmet.contentSecurityPolicy` middleware, so all 10 rotator nodes are reachable. But the upstream CSP whitelist only allows `api.steemit.com` and `api.steemitdev.com` for `connectSrc` — switching to production-mode without first widening the allowlist would silently neutralise the rotator. See `docs/FIXES.md` §2 for verification and recommended pre-deploy fix.
 
 
 

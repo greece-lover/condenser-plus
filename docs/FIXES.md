@@ -63,6 +63,68 @@ Same pattern as the fix Holger applied to [Welako](https://welako.app), where th
 
 ---
 
+## 2. CSP and multi-server rotation — verified working in dev, **production warning**
+
+**Date:** 2026-04-26
+**Verdict:** No active bug in the current dev setup. Pre-emptive fix recommended before any production deploy.
+
+### The concern
+
+Upstream Condenser ships a Content-Security-Policy in `config/default.json` (and `development.json`) whose `connectSrc` directive lists exactly three Steem endpoints:
+
+```
+'self' https://steemitimages.com https://api.steemit.com https://api.steemitdev.com api.trongrid.io ...
+```
+
+condenser-plus's rotator boots with 10 nodes (see `RotatorBootstrap.js`). Of those, only `api.steemit.com` is on the CSP allowlist. If the CSP were active, the browser would silently block requests to the other 9 nodes, the fetch would fail, the rotator would mark them down, and the app would fall back to `api.steemit.com` — the rotator would be **purely cosmetic**.
+
+This is exactly the issue witness moecki demonstrated on production steemit.com.
+
+### Why it does NOT bite us right now
+
+`src/server/server.js` registers `helmet.contentSecurityPolicy(...)` only inside an `if (env === 'production')` block. The dev container runs with `NODE_ENV=development` (see `docker-compose.dev.yml`). So in our current setup, no CSP header is sent, and rotator switches really do reach the chosen node.
+
+### Verification
+
+DevTools probes against the running demo at `http://192.168.217.131:8080/`:
+
+| Check | Result |
+|---|---|
+| `Content-Security-Policy` HTTP response header | not set |
+| `Content-Security-Policy-Report-Only` HTTP response header | not set |
+| `<meta http-equiv="Content-Security-Policy">` in HTML | not present |
+| Console errors mentioning CSP | none |
+| Direct fetch to `api.moecki.online` (NOT on the upstream allowlist) | HTTP 200, `head_block` returned |
+| Direct fetch to `api.steemyy.com` (NOT on the upstream allowlist) | HTTP 200, `head_block` returned |
+| Direct fetch to `api.justyy.com` (NOT on the upstream allowlist) | HTTP 200, `head_block` returned |
+| Normal browsing of `/trending` shows app's own RPC call going to | `api.steemit.com` (initial pick), 200 |
+
+→ **Rotator works, no fix needed in dev mode.**
+
+### What WILL bite us in production
+
+The moment `NODE_ENV=production` is set, the strict CSP kicks in. The first time the rotator switches the active node away from `api.steemit.com`, the browser will block the request and the rotator's `markUnhealthy` callback will fire — silently demoting every alternative node. The user-visible result: indicator might briefly flicker, but every real call falls back to `api.steemit.com` once the rotator runs out of "healthy" nodes (or the cooldown expires and the cycle repeats).
+
+### Recommended pre-production fix
+
+Extend `helmet.directives.connectSrc` in `config/production.json` (and ideally `default.json`) to allow either:
+
+- **Strategy 1 (whitelist all bootstrap nodes):** explicitly list every host in `RotatorBootstrap.DEFAULT_NODES` plus the existing entries.
+- **Strategy 2 (open https):** `'self' https:` — allows any HTTPS endpoint. Simpler and future-proof for users who add their own nodes; loses some defence-in-depth.
+- **Strategy 3 (hybrid):** keep the strict list but add wildcards for known witness domains like `https://*.steemyy.com`, `https://*.justyy.com`, etc.
+
+For an open multi-server platform whose whole point is letting the user route through different witnesses, Strategy 2 is the most consistent with the project's intent. Defer the decision to deploy time.
+
+### Sibling matches that should NOT be removed
+
+The CSP block in `config/default.json` also lists ad-network and analytics hosts (`googletagmanager`, `googleads`, `pagead2`, `securepubads`, `api.trongrid.io`). Those are unrelated to API rotation and should stay as-is regardless of how `connectSrc` is extended for Steem nodes.
+
+### Origin
+
+Discovered after community feedback (witness moecki demonstrated the silent fallback behaviour on steemit.com).
+
+---
+
 ## Format for future entries
 
 Every fix entry should answer: what was the bug, where was it (one or more files), what was the fix (in plain words plus diff stats), what's the tradeoff, and how does someone verify it works. Include any sibling matches that look related but should be left alone.
