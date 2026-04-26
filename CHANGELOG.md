@@ -14,3 +14,4 @@ All notable changes to condenser-plus.
 - Top navigation menu: needs visual polish (planned: enhanced menu)
 
 
+
