@@ -12,3 +12,6 @@ Tracks every divergence from `steemit/condenser`. The fork point is upstream com
 | 2026-04-26 | `src/app/components/elements/RotatorStatus.jsx` | new file | floating status widget for the demo |
 | 2026-04-26 | `README.md` | replaced upstream README; original preserved as `README.upstream.md` | fork-specific landing page |
 | 2026-04-26 | `LICENSE`, `NOTICE` | added Apache-2.0 LICENSE text and NOTICE attribution | upstream had no top-level LICENSE file |
+| 2026-04-26 | `src/app/utils/ProxifyUrl.js` | `proxifyImageUrl()` reduced to pure strip-then-return; no more proxy wrapping | Reliability — Steemit-Images proxy outages used to break all images. See `docs/FIXES.md`. |
+| 2026-04-26 | `.devcontainer/devcontainer.json` | new file | GitHub Codespaces config for one-click browser-based dev environment |
+| 2026-04-26 | `README.md` | added Codespaces badge | low-friction "try it" entry point |

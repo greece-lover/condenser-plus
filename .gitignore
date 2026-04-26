@@ -17,4 +17,3 @@ lib
 .env
 .env.local
 .env.*.local
-local-deps/*.tgz

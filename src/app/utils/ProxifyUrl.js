@@ -75,65 +75,27 @@ function isFirstPartyImageHost(hostname) {
 }
 
 /**
- * Strips all proxy domains from the beginning of the url. Adds the global proxy if dimension is specified
+ * Strips all proxy domains from the beginning of the url, returning the
+ * original CDN URL unchanged. The `dimensions` argument is accepted for
+ * call-site compatibility but ignored — image URLs are no longer wrapped
+ * through a proxy.
+ *
+ * Rationale: outages and slowdowns of the Steemit-Images proxy used to
+ * make all images on the page fail to load. Direct CDN loading is more
+ * reliable; modern browsers/CDNs handle sizing and caching adequately.
+ *
  * @param {string} url
- * @param {string|boolean} dimensions - optional -  if provided. url is proxied && global var $STM_Config.img_proxy_prefix is avail. resp will be "$STM_Config.img_proxy_prefix{dimensions}/{sanitized url}"
- *                                          if falsy, all proxies are stripped.
- *                                          if true, preserves the first {int}x{int} in a proxy url. If not found, uses 0x0
+ * @param {string|boolean} dimensions - ignored, kept for backward compatibility
  * @returns string
  */
 export function proxifyImageUrl(url, dimensions = false) {
+    // eslint-disable-next-line no-unused-vars
+    const _ignoredDimensions = dimensions;
     const proxyList = url.match(rProxyDomainsDimensions);
     let respUrl = url;
     if (proxyList) {
         const lastProxy = proxyList[proxyList.length - 1];
         respUrl = url.substring(url.lastIndexOf(lastProxy) + lastProxy.length);
-    }
-    if (!dimensions) return respUrl;
-
-    if (dimensions && $STM_Config && $STM_Config.img_proxy_prefix) {
-        let dims =
-            typeof dimensions === 'string' && dimensions.endsWith('/')
-                ? dimensions
-                : dimensions + '/';
-        if (typeof dimensions !== 'string') {
-            dims = proxyList
-                ? proxyList.shift().match(/([0-9]+x[0-9]+)\//g)[0]
-                : NATURAL_SIZE;
-        }
-
-        // NOTE: This forces the dimensions to be `CAPPED_SIZE` to save on
-        // bandwidth costs. Do not modify gifs.
-        if (!respUrl.match(/\.gif$/) && dims === NATURAL_SIZE) {
-            dims = CAPPED_SIZE;
-        }
-
-        // Third-party images: never proxy/transform. Only first-party domains can go via /p/.
-        try {
-            const target = new URL(respUrl);
-            if (!isFirstPartyImageHost(target.hostname)) return respUrl;
-
-            const dimsNoSlash = dims.endsWith('/') ? dims.slice(0, -1) : dims;
-            const [wStr, hStr] = String(dimsNoSlash).split('x');
-            const width = Number.parseInt(wStr, 10);
-            const height = Number.parseInt(hStr, 10);
-
-            const b58 = base58.encode(Buffer.from(respUrl, 'utf8'));
-            const pBase = `${ensureTrailingSlash(imageProxy())}p/${b58}`;
-            const pUrl = new URL(pBase);
-            pUrl.searchParams.set('mode', 'fit');
-            pUrl.searchParams.set('format', 'match');
-            if (Number.isFinite(width) && width > 0) {
-                pUrl.searchParams.set('width', String(width));
-            }
-            // Important: omit height when 0, to preserve aspect ratio (e.g. 640x0).
-            if (Number.isFinite(height) && height > 0) {
-                pUrl.searchParams.set('height', String(height));
-            }
-            return pUrl.toString();
-        } catch (e) {
-            return respUrl;
-        }
     }
     return respUrl;
 }
