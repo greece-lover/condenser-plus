@@ -1,13 +1,21 @@
+FROM node:12-bullseye-slim
 
-FROM node:12-alpine
-
-RUN apk add --no-cache python2 make g++ git
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python2 \
+        python3 \
+        make \
+        g++ \
+        git \
+        ca-certificates && \
+    ln -sf /usr/bin/python2 /usr/local/bin/python && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY package.json yarn.lock ./
 
-RUN yarn install --frozen-lockfile
+RUN yarn install --frozen-lockfile --network-timeout 600000
 
 RUN mkdir -p tmp
 

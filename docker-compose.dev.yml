@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+      network: host
     container_name: condenser-dev
     ports:
       - "8080:8080"
@@ -13,6 +14,9 @@ services:
       - NODE_ENV=development
       - SDC_CLIENT_STEEMD_URL=https://api.steemit.com
       - SDC_SERVER_STEEMD_URL=https://api.steemit.com
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     stdin_open: true
     tty: true
     restart: unless-stopped

@@ -1,0 +1,10 @@
+condenser-plus
+Copyright 2026 Holger Jacob (greece-lover)
+
+This product includes software developed at
+Steemit Inc. (https://steemit.com/).
+Original work: https://github.com/steemit/condenser
+
+This fork integrates steem-node-rotator
+(https://github.com/greece-lover/steem-node-rotator)
+for multi-server API rotation.

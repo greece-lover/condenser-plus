@@ -18,6 +18,10 @@ import { determineViewMode, determineActivityTag } from 'app/utils/Links';
 import ActivityTracker from 'app/utils/ActivityTracker';
 import ConsoleExports from './utils/ConsoleExports';
 import './assets/stylesheets/app.scss';
+import { initRotator } from 'app/utils/RotatorBootstrap';
+import React from 'react';
+import ReactDOM from 'react-dom';
+import RotatorStatus from 'app/components/elements/RotatorStatus';
 
 window.addEventListener('error', frontendLogger);
 
@@ -108,6 +112,21 @@ function runApp(initial_state) {
     steem.config.set('address_prefix', config.address_prefix);
     steem.config.set('chain_id', config.chain_id);
     window.$STM_Config = config;
+
+    // === steem-node-rotator demo integration ===
+    // Initialise the multi-node rotator. From here on, the rotator picks the
+    // fastest healthy node and updates steem.api.url whenever the active node
+    // changes (failure, recovery, periodic re-pick).
+    try {
+        initRotator();
+        const mount = document.createElement('div');
+        mount.id = 'steem-rotator-status-mount';
+        document.body.appendChild(mount);
+        ReactDOM.render(React.createElement(RotatorStatus), mount);
+    } catch (e) {
+        console.error('[steem-rotator] init failed', e);
+    }
+    // === end demo integration ===
     // plugins(config);
     if (initial_state.offchain.serverBusy) {
         window.$STM_ServerBusy = true;
