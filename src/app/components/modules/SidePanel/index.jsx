@@ -6,6 +6,7 @@ import * as appActions from 'app/redux/AppReducer';
 import CloseButton from 'app/components/elements/CloseButton';
 import Icon from 'app/components/elements/Icon';
 import { Link } from 'react-router';
+import { LOCALE_NAMES } from 'app/utils/LocaleNames';
 
 const SidePanel = ({
     alignment,
@@ -59,15 +60,11 @@ const SidePanel = ({
                         onClick={e => e.nativeEvent.stopImmediatePropagation()}
                         className="language"
                     >
-                        <option value="en">English</option>
-                        <option value="fr">French français</option>
-                        <option value="it">Italian italiano</option>
-                        <option value="ja">Japanese 日本語</option>
-                        <option value="ko">Korean 한국어</option>
-                        <option value="pl">Polish</option>
-                        <option value="ru">Russian русский</option>
-                        <option value="es">Spanish Español</option>
-                        <option value="uk">Ukranian Українська</option>
+                        {Object.keys(LOCALE_NAMES).map(code => (
+                            <option key={code} value={code}>
+                                {LOCALE_NAMES[code]}
+                            </option>
+                        ))}
                     </select>
                 </li>
             );
