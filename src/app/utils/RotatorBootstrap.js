@@ -23,6 +23,11 @@ const MONITOR_URL = 'https://api.steemapps.com/api/v1/status';
 const MONITOR_FETCH_TIMEOUT_MS = 5000;
 const MONITOR_RETRY_DELAY_MS = 2000;
 const SNAPSHOT_STORAGE_KEY = 'steemMonitorSnapshot';
+// TTL für den localStorage-Snapshot. Ältere Caches könnten einen "DOWN"-
+// Stand aus früheren Sessions zeigen, der den Nutzer ohne aktive Probe
+// blockiert. Nach Ablauf wird Fallback genommen, bis der Async-Fetch
+// frische Daten liefert.
+const SNAPSHOT_STALE_AFTER_MS = 5 * 60 * 1000;
 
 // Last-resort list used only when the monitor is unreachable AND no
 // localStorage snapshot exists. Three servers verified as robust during
@@ -170,8 +175,18 @@ export function initRotator() {
     _initStarted = true;
 
     // Step 1 — synchronous bootstrap so api.url has a target immediately.
+    // Snapshots älter als SNAPSHOT_STALE_AFTER_MS werden ignoriert, damit
+    // alte DOWN-Markierungen nicht hängen bleiben bis der Async-Fetch durch ist.
     const cached = readSnapshotFromStorage();
-    if (cached && cached.nodes.length) {
+    const cacheAgeMs = cached && cached.generated_at
+        ? Date.now() - new Date(cached.generated_at).getTime()
+        : Infinity;
+    if (
+        cached &&
+        Array.isArray(cached.nodes) &&
+        cached.nodes.length &&
+        cacheAgeMs < SNAPSHOT_STALE_AFTER_MS
+    ) {
         _nodes = cached.nodes;
         _snapshotGeneratedAt = cached.generated_at || null;
         _source = 'cache';

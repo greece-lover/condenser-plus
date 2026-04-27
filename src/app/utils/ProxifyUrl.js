@@ -91,11 +91,19 @@ function isFirstPartyImageHost(hostname) {
 export function proxifyImageUrl(url, dimensions = false) {
     // eslint-disable-next-line no-unused-vars
     const _ignoredDimensions = dimensions;
+    if (!url) return url;
     const proxyList = url.match(rProxyDomainsDimensions);
     let respUrl = url;
     if (proxyList) {
         const lastProxy = proxyList[proxyList.length - 1];
         respUrl = url.substring(url.lastIndexOf(lastProxy) + lastProxy.length);
+    }
+    // Mixed-Content-Schutz — HTTP-URLs durch HTTPS-Proxy wrappen.
+    // Notwendig wenn das Frontend über HTTPS läuft (Production).
+    // Auf HTTP-Frontends (Dev/VM) ist der Wrapper harmlos und kompatibel.
+    if (typeof respUrl === 'string' && respUrl.startsWith('http://')) {
+        const proxy = imageProxy();
+        if (proxy) return `${proxy}0x0/${respUrl}`;
     }
     return respUrl;
 }
