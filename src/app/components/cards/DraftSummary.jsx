@@ -8,6 +8,11 @@ import {
     highlightKeyword,
 } from 'app/utils/ExtractContent';
 import { proxifyImageUrl } from 'app/utils/ProxifyUrl';
+import {
+    isBrokenImageUrl,
+    PLACEHOLDER_IMAGES,
+    PLACEHOLDER_INFO_URL,
+} from 'app/utils/BrokenImageHostList';
 import * as userActions from 'app/redux/UserReducer';
 import TimeAgoWrapper from 'app/components/elements/TimeAgoWrapper';
 import Userpic, { SIZE_SMALL } from 'app/components/elements/Userpic';
@@ -115,14 +120,41 @@ class DraftSummary extends React.Component {
         );
 
         const image_link = extractImageLink(post.json_metadata, post.body);
+        const isBrokenPreview = isBrokenImageUrl(image_link);
         let thumb = null;
         if (image_link) {
-            const blogImg = proxify(image_link, '160x120');
-
-            thumb = <img className="drafts__feature-img" src={blogImg} />;
-            thumb = (
-                <span className="drafts__feature-img-container">{thumb}</span>
-            );
+            if (isBrokenPreview) {
+                // Bekannt toter Host → kleiner Platzhalter (Draft-Thumb ist 160x120).
+                // Click führt zum Erklärungs-Beitrag.
+                thumb = (
+                    <span className="drafts__feature-img-container">
+                        <a
+                            href={PLACEHOLDER_INFO_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <img
+                                className="drafts__feature-img"
+                                src={PLACEHOLDER_IMAGES.medium}
+                                alt="Original image no longer available"
+                                data-broken-image="true"
+                                data-original-src={image_link}
+                            />
+                        </a>
+                    </span>
+                );
+            } else {
+                const blogImg = proxify(image_link, '160x120');
+                thumb = (
+                    <img className="drafts__feature-img" src={blogImg} />
+                );
+                thumb = (
+                    <span className="drafts__feature-img-container">
+                        {thumb}
+                    </span>
+                );
+            }
         }
 
         return (

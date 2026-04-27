@@ -20,6 +20,11 @@ import UserNames from 'app/components/elements/UserNames';
 import tt from 'counterpart';
 import ImageUserBlockList from 'app/utils/ImageUserBlockList';
 import { proxifyImageUrl } from 'app/utils/ProxifyUrl';
+import {
+    isBrokenImageUrl,
+    PLACEHOLDER_IMAGES,
+    PLACEHOLDER_INFO_URL,
+} from 'app/utils/BrokenImageHostList';
 import Userpic, { SIZE_SMALL } from 'app/components/elements/Userpic';
 import SearchUserList from 'app/components/cards/SearchUserList';
 import { SIGNUP_URL } from 'shared/constants';
@@ -326,28 +331,53 @@ class PostSummary extends React.Component {
             post.get('json_metadata'),
             post.get('body')
         );
+        const isBrokenPreview = isBrokenImageUrl(image_link);
         let thumb = null;
         if (!gray && image_link && !ImageUserBlockList.includes(author)) {
-            // on mobile, we always use blog layout style -- there's no toggler
-            // on desktop, we offer a choice of either blog or list
-            // Fixed width (640x0) for all layouts to avoid cropping/squashing tall images
-            const thumbImg = proxify(image_link, '640x0');
-
-            if (this.props.blogmode) {
+            if (isBrokenPreview) {
+                // Bekannt toter Host oder abgelaufene Discord-URL → Platzhalter.
+                // Wrap-Link (Klick-Ziel) wird unten konditional gesetzt.
                 thumb = (
-                    <img className="articles__feature-img" src={thumbImg} />
+                    <span className="articles__feature-img-container">
+                        <img
+                            className="articles__feature-img"
+                            src={PLACEHOLDER_IMAGES.large}
+                            alt="Original image no longer available"
+                            data-broken-image="true"
+                            data-original-src={image_link}
+                        />
+                    </span>
                 );
             } else {
+                // on mobile, we always use blog layout style -- there's no toggler
+                // on desktop, we offer a choice of either blog or list
+                // Fixed width (640x0) for all layouts to avoid cropping/squashing tall images
+                const thumbImg = proxify(image_link, '640x0');
+
+                if (this.props.blogmode) {
+                    thumb = (
+                        <img
+                            className="articles__feature-img"
+                            src={thumbImg}
+                        />
+                    );
+                } else {
+                    thumb = (
+                        <picture className="articles__feature-img">
+                            <source
+                                srcSet={thumbImg}
+                                media="(min-width: 1000px)"
+                            />
+                            <img srcSet={thumbImg} />
+                        </picture>
+                    );
+                }
                 thumb = (
-                    <picture className="articles__feature-img">
-                        <source srcSet={thumbImg} media="(min-width: 1000px)" />
-                        <img srcSet={thumbImg} />
-                    </picture>
+                    <span className="articles__feature-img-container">
+                        {thumb}
+                    </span>
                 );
             }
-            thumb = (
-                <span className="articles__feature-img-container">{thumb}</span>
-            );
         }
 
         return depth === 2 ? (
@@ -367,9 +397,24 @@ class PostSummary extends React.Component {
                 >
                     {thumb ? (
                         <div className="articles__content-block articles__content-block--img">
-                            <Link className="articles__link" to={post_url}>
-                                {thumb}
-                            </Link>
+                            {isBrokenPreview ? (
+                                <a
+                                    className="articles__link"
+                                    href={PLACEHOLDER_INFO_URL}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={e => e.stopPropagation()}
+                                >
+                                    {thumb}
+                                </a>
+                            ) : (
+                                <Link
+                                    className="articles__link"
+                                    to={post_url}
+                                >
+                                    {thumb}
+                                </Link>
+                            )}
                         </div>
                     ) : null}
                     <div className="articles__content-block articles__content-block--text">
