@@ -4,6 +4,11 @@ import linksRe, { any as linksAny } from 'app/utils/Links';
 import { validate_account_name } from 'app/utils/ChainValidation';
 import { proxifyImageUrl } from 'app/utils/ProxifyUrl';
 import * as Phishing from 'app/utils/Phishing';
+import {
+    isBrokenImageUrl,
+    getPlaceholderForSize,
+    PLACEHOLDER_INFO_URL,
+} from 'app/utils/BrokenImageHostList';
 
 export const getPhishingWarningMessage = () => tt('g.phishy_message');
 export const getExternalLinkWarningMessage = () =>
@@ -254,14 +259,37 @@ function img(state, child) {
             if (url2 !== url) {
                 child.setAttribute('src', url2);
             }
+            // Broken-Image-Filter: bekannt tote Hosts und abgelaufene Discord-URLs
+            // werden durch Platzhalter ersetzt. data-broken-image markiert das
+            // Element für nachgelagerte Pipeline-Schritte (Wrapper-Link unten).
+            const finalSrc = child.getAttribute('src');
+            if (isBrokenImageUrl(finalSrc)) {
+                const w = parseInt(child.getAttribute('width'), 10) || null;
+                const h = parseInt(child.getAttribute('height'), 10) || null;
+                const placeholder = getPlaceholderForSize(w, h);
+                child.setAttribute('data-original-src', finalSrc);
+                child.setAttribute('data-broken-image', 'true');
+                child.setAttribute('src', placeholder);
+                child.setAttribute(
+                    'alt',
+                    'Original image no longer available'
+                );
+            }
         }
     }
     if (child.parentNode && child.parentNode.nodeName.toLowerCase() !== 'a') {
+        const isBroken =
+            child.getAttribute &&
+            child.getAttribute('data-broken-image') === 'true';
+        const linkHref = isBroken
+            ? PLACEHOLDER_INFO_URL
+            : proxifyImageUrl(child.getAttribute('src') || url, '0x0/');
+        const linkRel = isBroken
+            ? ' rel="noopener noreferrer"'
+            : '';
         child.parentNode.replaceChild(
             DOMParser.parseFromString(
-                `<a href="` +
-                    proxifyImageUrl(url, '0x0/') +
-                    `" target="_blank">${child}</a>`
+                `<a href="${linkHref}" target="_blank"${linkRel}>${child}</a>`
             ),
             child
         );
