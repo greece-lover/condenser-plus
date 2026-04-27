@@ -13,7 +13,7 @@ services:
     environment:
       - NODE_ENV=development
       - SDC_CLIENT_STEEMD_URL=https://api.steemit.com
-      - SDC_SERVER_STEEMD_URL=https://api.steemit.com
+      - SDC_SERVER_STEEMD_URL=https://api.moecki.online
     dns:
       - 8.8.8.8
       - 1.1.1.1

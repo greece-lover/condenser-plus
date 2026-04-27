@@ -14,8 +14,9 @@ RUN apt-get update && \
 WORKDIR /app
 
 COPY package.json yarn.lock ./
+COPY local-deps ./local-deps
 
-RUN yarn install --frozen-lockfile --network-timeout 600000
+RUN yarn install --frozen-lockfile --network-timeout 600000 --ignore-engines
 
 RUN mkdir -p tmp
 
