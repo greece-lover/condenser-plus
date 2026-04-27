@@ -184,6 +184,69 @@ Direct response to witness moecki's Discord feedback that node-switching on stee
 
 ---
 
+## 4. Centralised health monitoring via api.steemapps.com
+
+**Date:** 2026-04-27
+**Files affected:** `RotatorBootstrap.js`, `server.js`, `Settings.jsx`, `ServerIndicator.jsx`, `ServerIndicator.scss`
+
+### Problem
+
+Each browser client was performing its own healthchecks against all bootstrap nodes every five minutes (`HealthCheckLoop` in `steem-node-rotator`). With growing user count this would put significant load on individual API operators — especially smaller witness servers like `api.moecki.online` or `steemd.blazeapps.org`. Pointed out by witness moecki on Steem.
+
+### Fix
+
+The rotator now fetches node health centrally from `https://api.steemapps.com/api/v1/status` (the existing API monitor that already tracks all known Steem nodes). Each browser makes one fetch on page load instead of constant pings to each node.
+
+- **Source:** `https://api.steemapps.com/api/v1/status`
+- **Polling:** page-load only, no recurring polling
+- **Cache:** `localStorage` key `steemMonitorSnapshot` keeps the last successful snapshot
+- **Failover chain (per page load):**
+  1. Monitor fetch (5 s timeout, plus one retry after 2 s)
+  2. `localStorage` snapshot from a previous session
+  3. Hardcoded three-server emergency list (`api.steemit.com`, `api.moecki.online`, `api.steemyy.com`)
+- Servers are shown in Settings with their monitor status (`ok`/`degraded`/`down`). User-pinned servers are respected even when marked down — the user's choice always wins.
+
+### Verification (in dev mode, browser plugin)
+
+| Step | Expectation | Result |
+|---|---|---|
+| Fresh page load | `performance.getEntriesByType('resource')` shows exactly **one** call to `api.steemapps.com/api/v1/status`; **zero** calls to other bootstrap servers (only the active node sees real Steem-API traffic) | ✅ |
+| Console | `[Rotator] Fetched 11 nodes from monitor` and `[Rotator] active node -> https://api.moecki.online` | ✅ |
+| Failover with cache | `MONITOR_URL` swapped to invalid host, page reload — console logs `Monitor fetch failed (1/2)` then `Monitor unreachable, using fallback`, `getSource() === 'cache'`, demo loads, posts render | ✅ |
+| Failover without cache | Cache cleared, monitor still blocked — `getSource() === 'fallback'`, three-node emergency list active, `api.steemit.com` selected, demo still loads | ✅ |
+| Settings dropdown | 11 monitor nodes in monitor order with live latency; active node marked with `✓`; pin-to-down still allowed | ✅ |
+| User pin overrides monitor | `userPreferredRpc=https://api.moecki.online` set, monitor returns same 11 nodes, `getSource()==='monitor'` but `__activeSteemNode === pin` | ✅ |
+| ServerIndicator | Status dot driven by monitor `status` field; counter says "X of Y nodes ok" | ✅ |
+
+### CSP allowlist update
+
+Three monitor-tracked nodes were missing from `STEEM_RPC_HOSTS` (the production CSP `connect-src` allowlist) and would have been silently blocked in production:
+
+- `steem.senior.workers.dev`
+- `steemd.steemworld.org`
+- `steemd.blazeapps.org`
+
+Added in this fix. Also added `https://api.steemapps.com` to the production CSP so the monitor fetch itself is allowed under the helmet config.
+
+### Removed dependencies (effective)
+
+`steem-node-rotator` (`SteemRotator`, `HealthCheckLoop`) is no longer imported in `RotatorBootstrap.js`. The package itself stays in `package.json` for now and is removed in a follow-up commit once nothing else depends on it.
+
+### Why this matters
+
+Scales gracefully. Even with 10 000+ concurrent users, individual API operators see no extra load from per-client healthchecks. Smaller witness nodes can stay in the rotation without performance worry.
+
+### Sibling matches that should NOT be removed
+
+- `LOCALSTORAGE_RPC_NODE_KEY` (`steemSelectedRpc`) and `LOCALSTORAGE_USER_PREFERRED_RPC_KEY` (`userPreferredRpc`) keep their semantics from §3.
+- `config/*.json` `rpc_list` is no longer read by the UI but stays in the config files for now (avoids touching server-side rendering bootstrap). It will be removed in a follow-up cleanup session — flagged but not in scope here.
+
+### Origin
+
+Direct response to witness moecki's comment on Steem about per-browser healthchecks scaling poorly with user count. The monitor already existed; this fix simply teaches the client to use it.
+
+---
+
 ## Format for future entries
 
 Every fix entry should answer: what was the bug, where was it (one or more files), what was the fix (in plain words plus diff stats), what's the tradeoff, and how does someone verify it works. Include any sibling matches that look related but should be left alone.

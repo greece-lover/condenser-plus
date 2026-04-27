@@ -40,8 +40,12 @@ if (cluster.isMaster) console.log('application server starting, please wait.');
 // allowlist or the browser will silently block the request and the rotator
 // will fall back to api.steemit.com — making multi-server rotation purely
 // cosmetic. Discovered after witness moecki demonstrated the fallback
-// behaviour on production steemit.com. Keep this in sync with both
-// RotatorBootstrap.DEFAULT_NODES (10 nodes) and config.rpc_list.
+// behaviour on production steemit.com.
+//
+// The active server list is now sourced from https://api.steemapps.com
+// at runtime, so this allowlist must be a superset of every URL the
+// monitor may return. Leaving entries that the monitor does not currently
+// track is safe — they just go unused.
 const STEEM_RPC_HOSTS = [
     'https://api.steemit.com',
     'https://api.steemitdev.com',
@@ -69,6 +73,9 @@ const STEEM_RPC_HOSTS = [
     'https://api.steemzzang.com',
     'https://api.steememory.com',
     'https://api.futureshock.world',
+    'https://steem.senior.workers.dev',
+    'https://steemd.steemworld.org',
+    'https://steemd.blazeapps.org',
 ];
 
 const app = new Koa();
@@ -405,9 +412,11 @@ if (env === 'production') {
     // nodes in production. Without this the upstream connect-src directive
     // (api.steemit.com + api.steemitdev.com only) silently blocks every
     // other node and the rotator becomes purely cosmetic.
+    // api.steemapps.com is the central monitor the rotator polls on page load.
     helmetConfig.directives.connectSrc = [
         ...(helmetConfig.directives.connectSrc || []),
         ...STEEM_RPC_HOSTS,
+        'https://api.steemapps.com',
     ];
     helmetConfig.directives.reportUri = helmetConfig.directives.reportUri[0];
     if (helmetConfig.directives.reportUri === '-') {

@@ -94,6 +94,7 @@
         height: 6px;
         border-radius: 50%;
         &.is-healthy { background: #2A9D8F; }
+        &.is-degraded { background: #F4A261; }
         &.is-down { background: #E76F51; }
     }
 

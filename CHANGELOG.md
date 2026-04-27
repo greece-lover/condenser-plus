@@ -4,6 +4,9 @@ All notable changes to condenser-plus.
 
 ## [Unreleased]
 
+### Changed
+- **Rotator now fetches node health centrally from `api.steemapps.com` instead of having each browser ping all servers individually.** The previous per-client `HealthCheckLoop` is gone; one fetch on page load replaces N pings every five minutes. Reduces load on small witness API operators significantly and gives every client the same view of node health. Failover chain: monitor → `localStorage` snapshot → three-server emergency list. User-pinned servers continue to override the rotator. The production CSP `connect-src` allowlist gained `https://api.steemapps.com` plus the three monitor-only nodes (`steem.senior.workers.dev`, `steemd.steemworld.org`, `steemd.blazeapps.org`). See `docs/FIXES.md` §4. Pointed out by witness moecki on Steem.
+
 ### Fixed
 - **Steemit-Images proxy bypass:** image URLs in posts now load directly from their CDN instead of through `steemitimages.com/<size>/`. Resolves visibility issues when the proxy is slow or down. Avatars and the sanitiser allowlist are unchanged. See `docs/FIXES.md` for the full inventory and rationale.
 
@@ -24,7 +27,7 @@ All notable changes to condenser-plus.
 
 ### Known Issues
 - Top navigation menu: needs visual polish (planned: enhanced menu)
-- **CSP not relaxed for multi-server rotation.** Currently no impact: dev mode does not register the `helmet.contentSecurityPolicy` middleware, so all 10 rotator nodes are reachable. But the upstream CSP whitelist only allows `api.steemit.com` and `api.steemitdev.com` for `connectSrc` — switching to production-mode without first widening the allowlist would silently neutralise the rotator. See `docs/FIXES.md` §2 for verification and recommended pre-deploy fix.
+- **`config/*.json` `rpc_list` is no longer read by any UI code** but still ships in the config files. Harmless dead config; will be cleaned up in a follow-up session.
 
 
 

@@ -1,32 +1,44 @@
 /* eslint-disable no-console */
 //
-// RotatorBootstrap.js — initialises steem-node-rotator and keeps the
-// @steemit/steem-js global RPC URL pointed at the fastest healthy node.
+// RotatorBootstrap.js — initialises the active Steem RPC node from the
+// central api.steemapps.com monitor.
 //
-// This file is added by the demo and is the only piece of glue between
-// Condenser and the steem-node-rotator package. The rest of Condenser
-// keeps using `api` from @steemit/steem-js as before.
+// Background: each browser used to perform its own healthchecks against
+// every bootstrap server every five minutes. With many concurrent users
+// that pattern is hostile to small witness API operators. The monitor
+// already aggregates this data centrally; we now fetch it once per page
+// load and cache it for the rest of the session.
 //
-import { SteemRotator, HealthCheckLoop } from 'steem-node-rotator';
+// Failover chain:
+//   1. https://api.steemapps.com/api/v1/status   (primary)
+//   2. localStorage snapshot from previous session
+//   3. FALLBACK_NODES — three robust servers as last resort
+//
+// Pointed out by witness moecki on Steem.
+//
 import { api } from '@steemit/steem-js';
 import { changeRPCNodeToDefault, getUserPreferredRpc } from 'app/utils/RPCNode';
 
-const DEFAULT_NODES = [
+const MONITOR_URL = 'https://api.steemapps.com/api/v1/status';
+const MONITOR_FETCH_TIMEOUT_MS = 5000;
+const MONITOR_RETRY_DELAY_MS = 2000;
+const SNAPSHOT_STORAGE_KEY = 'steemMonitorSnapshot';
+
+// Last-resort list used only when the monitor is unreachable AND no
+// localStorage snapshot exists. Three servers verified as robust during
+// the 2026-04-27 endpoint check.
+const FALLBACK_NODES = [
     'https://api.steemit.com',
-    'https://api.steemyy.com',
-    'https://api.justyy.com',
-    'https://steem.nirmaha.com',
-    'https://steemenginerpc.com',
     'https://api.moecki.online',
-    'https://api.dlike.io',
-    'https://steem.61bts.com',
-    'https://steem.ecosynthesizer.com',
-    'https://api.upvu.org',
+    'https://api.steemyy.com',
 ];
 
-let _rotator = null;
-let _loop = null;
+// Internal state — array of node objects in monitor schema:
+//   { url, region, status, score, latency_ms, block_lag, last_tick_ts, ... }
+let _nodes = [];
 let _activeNode = null;
+let _snapshotGeneratedAt = null;
+let _source = 'none'; // 'monitor' | 'cache' | 'fallback'
 const _listeners = new Set();
 
 function notify(eventName, info) {
@@ -47,100 +59,193 @@ function applyNode(url) {
         window.__activeSteemNode = url;
     }
     notify('node-active', { url });
-    console.log('[steem-rotator] active node ->', url);
+    console.log('[Rotator] active node ->', url);
 }
 
-function pickAndApplyFastest() {
-    if (!_rotator) return;
-    // User-pin overrides auto-pick. The pinned node is what the user chose
-    // in Settings; we never override it from the rotator.
+// Pick the best node from the current snapshot. User pin always wins.
+// Otherwise: highest score among status==ok, then degraded, then first.
+function pickActiveNode() {
     const pinned = getUserPreferredRpc();
     if (pinned) {
         applyNode(pinned);
         return;
     }
-    const nodes = _rotator.nodes();
-    const healthy = nodes
-        .filter(n => n.isHealthy && n.latencyMs !== null)
-        .sort((a, b) => a.latencyMs - b.latencyMs);
-    const winner = healthy[0] || nodes.find(n => n.isHealthy);
-    if (winner) applyNode(winner.url);
+    if (!_nodes.length) return;
+
+    const byScoreThenLatency = (a, b) => {
+        const sa = a.score == null ? -1 : a.score;
+        const sb = b.score == null ? -1 : b.score;
+        if (sa !== sb) return sb - sa;
+        const la = a.latency_ms == null ? Infinity : a.latency_ms;
+        const lb = b.latency_ms == null ? Infinity : b.latency_ms;
+        return la - lb;
+    };
+
+    const ok = _nodes.filter(n => n.status === 'ok').sort(byScoreThenLatency);
+    if (ok.length) { applyNode(ok[0].url); return; }
+
+    const degraded = _nodes.filter(n => n.status === 'degraded').sort(byScoreThenLatency);
+    if (degraded.length) { applyNode(degraded[0].url); return; }
+
+    applyNode(_nodes[0].url);
 }
 
-export function initRotator(opts = {}) {
-    if (_rotator) return _rotator;
-    const nodes = opts.nodes && opts.nodes.length ? opts.nodes : DEFAULT_NODES;
-
-    _rotator = new SteemRotator({
-        nodes,
-        timeoutMs: 6000,
-        cooldownMs: 60000,
-        storage: typeof window !== 'undefined' ? window.localStorage : null,
-        onNodeFailure: (info) => {
-            console.warn('[steem-rotator] node failed:', info.url, info.reason);
-            notify('node-failure', info);
-            // If a user has pinned a node, don't silently switch away — the
-            // user wanted this specific node. If the pin happens to be the
-            // failing node, the indicator's red status communicates the
-            // problem; the user can pick another or switch back to auto.
-            if (_activeNode === info.url && !getUserPreferredRpc()) {
-                pickAndApplyFastest();
-            }
-        },
-        onNodeRecovery: (info) => {
-            console.info('[steem-rotator] node recovered:', info.url, info.latencyMs + ' ms');
-            notify('node-recovery', info);
-        },
-    });
-
-    _loop = new HealthCheckLoop(_rotator, {
-        intervalMs: 5 * 60000,
-        skipWhenHidden: true,
-        runImmediately: true,
-    });
-
-    // Apply the first eligible node immediately so the very first call
-    // already goes to a known node. If the user pinned one, that takes
-    // precedence over the bootstrap-default order.
-    const pinnedAtBoot = getUserPreferredRpc();
-    if (pinnedAtBoot) {
-        applyNode(pinnedAtBoot);
-    } else {
-        applyNode(_rotator.nodes()[0].url);
+function readSnapshotFromStorage() {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(SNAPSHOT_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !Array.isArray(parsed.nodes) || !parsed.nodes.length) return null;
+        return parsed;
+    } catch (e) {
+        return null;
     }
+}
 
-    // After the first probe finishes, pick the fastest healthy one — but
-    // pickAndApplyFastest also respects the user pin, so this is a no-op
-    // when the user has chosen a specific server.
-    setTimeout(pickAndApplyFastest, 8000);
+function writeSnapshotToStorage(snapshot) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshot));
+    } catch (e) { /* quota etc. — ignore */ }
+}
 
-    _loop.start();
+function fallbackNodes() {
+    return FALLBACK_NODES.map(url => ({
+        url,
+        region: 'unknown',
+        status: 'unknown',
+        score: null,
+        latency_ms: null,
+        block_lag: null,
+        last_tick_ts: null,
+    }));
+}
+
+// Single fetch attempt with timeout. Returns parsed payload on success
+// or { __error } on any failure (network, timeout, non-2xx, malformed).
+async function fetchMonitorOnce() {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), MONITOR_FETCH_TIMEOUT_MS);
+    try {
+        const resp = await fetch(MONITOR_URL, {
+            method: 'GET',
+            credentials: 'omit',
+            signal: controller.signal,
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        if (!data || !Array.isArray(data.nodes) || !data.nodes.length) {
+            throw new Error('empty or malformed payload');
+        }
+        return data;
+    } catch (err) {
+        return { __error: err && err.message ? err.message : String(err) };
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// Page-load failover counter: one initial attempt plus one retry.
+async function fetchFromMonitor() {
+    const first = await fetchMonitorOnce();
+    if (!first.__error) {
+        console.log(`[Rotator] Fetched ${first.nodes.length} nodes from monitor`);
+        return first;
+    }
+    console.warn(`[Rotator] Monitor fetch failed (1/2): ${first.__error}`);
+    await new Promise(r => setTimeout(r, MONITOR_RETRY_DELAY_MS));
+    const second = await fetchMonitorOnce();
+    if (!second.__error) {
+        console.log(`[Rotator] Fetched ${second.nodes.length} nodes from monitor (retry)`);
+        return second;
+    }
+    console.warn(`[Rotator] Monitor unreachable, using fallback: ${second.__error}`);
+    return null;
+}
+
+let _initStarted = false;
+export function initRotator() {
+    if (_initStarted) return;
+    _initStarted = true;
+
+    // Step 1 — synchronous bootstrap so api.url has a target immediately.
+    const cached = readSnapshotFromStorage();
+    if (cached && cached.nodes.length) {
+        _nodes = cached.nodes;
+        _snapshotGeneratedAt = cached.generated_at || null;
+        _source = 'cache';
+    } else {
+        _nodes = fallbackNodes();
+        _source = 'fallback';
+    }
+    pickActiveNode();
+    notify('nodes-loaded', { source: _source, count: _nodes.length });
+
+    // Step 2 — asynchronous monitor fetch. On success, replace the cache
+    // bootstrap with fresh data and re-pick. The retry inside
+    // fetchFromMonitor IS the page-load failover counter.
+    fetchFromMonitor().then(snapshot => {
+        if (snapshot) {
+            _nodes = snapshot.nodes;
+            _snapshotGeneratedAt = snapshot.generated_at || null;
+            _source = 'monitor';
+            writeSnapshotToStorage({
+                generated_at: snapshot.generated_at,
+                nodes: snapshot.nodes,
+            });
+            pickActiveNode();
+            notify('nodes-loaded', { source: _source, count: _nodes.length });
+        }
+    });
 
     if (typeof window !== 'undefined') {
-        window.__steemRotator = _rotator;
-        window.__steemRotatorLoop = _loop;
+        window.__steemRotator = {
+            getNodes: () => _nodes,
+            getActive: () => _activeNode,
+            getSource: () => _source,
+            getGeneratedAt: () => _snapshotGeneratedAt,
+        };
         window.__getActiveSteemNode = () => _activeNode;
     }
-
-    return _rotator;
 }
 
-export function getRotator() { return _rotator; }
 export function getActiveNode() { return _activeNode; }
-export function onRotatorEvent(fn) { _listeners.add(fn); return () => _listeners.delete(fn); }
-export function getNodeHealth() {
-    return _rotator ? _rotator.nodes() : [];
+
+export function onRotatorEvent(fn) {
+    _listeners.add(fn);
+    return () => _listeners.delete(fn);
 }
 
-// Called by Settings when the user changes the pin. Forces an immediate
-// apply so the next RPC call goes to the right node without waiting for
-// the next probe tick.
+// Map internal monitor schema to the legacy UI shape so existing
+// consumers (ServerIndicator, Settings) keep working. `status` is
+// added on top for the new badges. `isHealthy` is true only for
+// status 'ok' — degraded and down both render as not-healthy.
+export function getNodeHealth() {
+    return _nodes.map(n => ({
+        url: n.url,
+        latencyMs: n.latency_ms == null ? null : n.latency_ms,
+        isHealthy: n.status === 'ok',
+        status: n.status || 'unknown',
+        score: n.score == null ? null : n.score,
+        region: n.region || 'unknown',
+    }));
+}
+
+export function getSnapshotSource() {
+    return { source: _source, generatedAt: _snapshotGeneratedAt };
+}
+
 export function applyUserPreferenceNow() {
     const pinned = getUserPreferredRpc();
     if (pinned) {
         applyNode(pinned);
     } else {
-        // Pin was just cleared — go back to auto-mode by re-picking.
-        pickAndApplyFastest();
+        pickActiveNode();
     }
+}
+
+// Backward-compat shim — returns the debug façade exposed on window.
+export function getRotator() {
+    return typeof window !== 'undefined' ? window.__steemRotator || null : null;
 }

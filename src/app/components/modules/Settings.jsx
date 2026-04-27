@@ -461,15 +461,18 @@ class Settings extends React.Component {
                                 rpcLiveActiveNode,
                                 rpcLiveNodes,
                             } = this.state;
-                            const list =
-                                ($STM_Config &&
-                                    $STM_Config.steemd_rpc_list) ||
-                                [];
+                            // Server list comes from the central monitor
+                            // snapshot (rpcLiveNodes). The legacy
+                            // $STM_Config.steemd_rpc_list is no longer used —
+                            // the monitor is the single source of truth.
+                            const list = (rpcLiveNodes || []).map(n => n.url);
                             const latencyByUrl = {};
                             const healthyByUrl = {};
+                            const statusByUrl = {};
                             (rpcLiveNodes || []).forEach(n => {
                                 latencyByUrl[n.url] = n.latencyMs;
                                 healthyByUrl[n.url] = n.isHealthy;
+                                statusByUrl[n.url] = n.status;
                             });
                             const hostOnly = url =>
                                 String(url || '')
@@ -485,6 +488,18 @@ class Settings extends React.Component {
                                 const lat = latencyByUrl[url];
                                 if (lat == null) return `${h}  —  …`;
                                 return `${h}  —  ${lat} ms`;
+                            };
+                            const statusBadge = url => {
+                                const s = statusByUrl[url];
+                                if (s === 'down') return ' ⚠ DOWN';
+                                if (s === 'degraded') return ' ⚠ degraded';
+                                return '';
+                            };
+                            const statusTitle = url => {
+                                const s = statusByUrl[url];
+                                if (s === 'down') return 'Server is currently marked down by the monitor — you can still pin it if you want.';
+                                if (s === 'degraded') return 'Server is currently degraded (slow or partial issues).';
+                                return '';
                             };
                             return (
                                 <div className="Settings__rpc">
@@ -569,15 +584,16 @@ class Settings extends React.Component {
                                                         <option
                                                             key={url}
                                                             value={url}
+                                                            title={statusTitle(
+                                                                url
+                                                            )}
                                                         >
                                                             {formatOption(
                                                                 url
                                                             )}
-                                                            {healthyByUrl[
+                                                            {statusBadge(
                                                                 url
-                                                            ] === false
-                                                                ? ' (down)'
-                                                                : ''}
+                                                            )}
                                                             {url ===
                                                             rpcLiveActiveNode
                                                                 ? ' ✓'

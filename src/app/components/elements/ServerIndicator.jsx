@@ -6,17 +6,22 @@ import {
 } from 'app/utils/RotatorBootstrap';
 import './ServerIndicator.scss';
 
-function getActiveLatency(activeUrl, nodes) {
+function getActiveNodeRecord(activeUrl, nodes) {
     if (!activeUrl) return null;
-    const node = nodes.find(n => n.url === activeUrl);
-    return node ? node.latencyMs : null;
+    return nodes.find(n => n.url === activeUrl) || null;
 }
 
-function statusFromLatency(ms) {
-    if (ms == null) return 'unknown';
-    if (ms < 500) return 'fast';
-    if (ms < 1500) return 'slow';
-    return 'down';
+// Map the monitor status to the existing CSS state names so the
+// existing styling (--fast / --slow / --down / --unknown) keeps working.
+function statusFromMonitor(node) {
+    if (!node) return 'unknown';
+    if (node.status === 'down') return 'down';
+    if (node.status === 'degraded') return 'slow';
+    if (node.status === 'ok') {
+        if (node.latencyMs == null) return 'fast';
+        return node.latencyMs < 500 ? 'fast' : 'slow';
+    }
+    return 'unknown';
 }
 
 class ServerIndicator extends Component {
@@ -82,14 +87,21 @@ class ServerIndicator extends Component {
         const { active, nodes, open } = this.state;
         if (!active) return null;
 
-        const latency = getActiveLatency(active, nodes);
-        const status = statusFromLatency(latency);
+        const activeRec = getActiveNodeRecord(active, nodes);
+        const latency = activeRec ? activeRec.latencyMs : null;
+        const status = statusFromMonitor(activeRec);
         const shortHost = active.replace(/^https?:\/\//, '').replace(/\/$/, '');
-        const healthy = nodes.filter(n => n.isHealthy).length;
+        const ok = nodes.filter(n => n.status === 'ok').length;
         const total = nodes.length;
         const tooltipText = `${active} — ${
             latency != null ? `${latency} ms` : 'no probe yet'
-        } (${healthy}/${total} healthy)`;
+        } (${ok}/${total} ok)`;
+
+        const dotClass = nodeStatus => {
+            if (nodeStatus === 'ok') return 'is-healthy';
+            if (nodeStatus === 'degraded') return 'is-degraded';
+            return 'is-down';
+        };
 
         const className =
             'ServerIndicator ServerIndicator--' +
@@ -114,7 +126,7 @@ class ServerIndicator extends Component {
                         onClick={this.stopPropagation}
                     >
                         <div className="ServerIndicator__panelHeader">
-                            {healthy} of {total} nodes healthy
+                            {ok} of {total} nodes ok
                         </div>
                         <table className="ServerIndicator__table">
                             <tbody>
@@ -128,9 +140,10 @@ class ServerIndicator extends Component {
                                         <td>
                                             <span
                                                 className={
-                                                    'ServerIndicator__nodedot is-' +
-                                                    (n.isHealthy ? 'healthy' : 'down')
+                                                    'ServerIndicator__nodedot ' +
+                                                    dotClass(n.status)
                                                 }
+                                                title={n.status || 'unknown'}
                                             />
                                         </td>
                                         <td className="ServerIndicator__nodehost">
